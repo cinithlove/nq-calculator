@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NQ Expected Move Calculator</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Prompt', sans-serif; }
+        @media print {
+            body { background: white !important; color: black !important; }
+            .no-print { display: none !important; }
+            .print-box { border: 1px solid #ccc !important; background: white !important; color: black !important; }
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-6 sm:p-8">
+        <div class="text-center mb-6">
+            <h1 class="text-2xl font-bold text-sky-400">NQ Expected Move Calculator</h1>
+            <p class="text-slate-400 text-sm mt-1">คำนวณกรอบการแกว่งตัวของ NQ รองรับทั้งวันปกติและวัน Event ใหญ่</p>
+        </div>
+
+        <!-- Input Form (Manual Entry - เสถียร 100%) -->
+        <div class="no-print space-y-4 mb-6 bg-slate-950/40 p-4 rounded-xl border border-slate-800">
+            <!-- Mode Selection Tabs -->
+            <div class="space-y-1.5">
+                <label class="block text-xs font-medium text-slate-300">เลือกโหมดความผันผวน (Volatility Mode)</label>
+                <div class="grid grid-cols-2 gap-2 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                    <button type="button" id="btnModeVxn" onclick="switchMode('vxn')" class="py-2 text-xs font-bold rounded-lg transition bg-sky-500 text-slate-950 shadow-md">
+                        วันปกติ (VXN 30-Day)
+                    </button>
+                    <button type="button" id="btnModeVix1d" onclick="switchMode('vix1d')" class="py-2 text-xs font-bold rounded-lg transition text-slate-400 hover:text-white">
+                        วันมี Event (VIX1D 0DTE)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Inputs: Open Price, Current Price, Volatility -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">ราคาเปิด NQ (Open)</label>
+                    <input type="number" id="openPrice" step="any" value="" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-sky-400 transition" placeholder="เช่น 29229">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">ราคาปัจจุบัน (Spot)</label>
+                    <input type="number" id="currentPrice" step="any" value="" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-sky-400 transition" placeholder="เช่น 29768">
+                </div>
+                <div>
+                    <label id="volInputLabel" class="block text-xs font-medium text-slate-300 mb-1">ค่าดัชนี VXN (%)</label>
+                    <input type="number" id="volValue" step="any" value="" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-sky-400 transition" placeholder="เช่น 27.13">
+                </div>
+            </div>
+
+            <!-- Beta Adjustment Section for VIX1D with Calibrate Button -->
+            <div id="betaContainer" class="hidden space-y-2 bg-amber-500/10 border border-amber-500/20 p-3 rounded-xl">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <div class="text-xs font-medium text-amber-300">NDX/SPX Beta Multiplier:</div>
+                        <div class="text-[10px] text-slate-400">ชดเชยความผันผวนของหุ้น Tech ต่อตลาดรวม</div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="betaMultiplier" step="0.01" min="0.01" value="1.48" class="w-16 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-center font-mono text-white text-xs focus:outline-none focus:border-amber-400">
+                        <button type="button" onclick="toggleCalibrateBox()" class="bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs px-2.5 py-1 rounded-lg transition active:scale-95 flex items-center gap-1 font-medium">
+                            ⚖️ Calibrate
+                        </button>
+                    </div>
+                </div>
+
+                <!-- กล่องคำนวณ Calibrate ย่อย -->
+                <div id="calibrateBox" class="hidden bg-slate-900/90 border border-slate-700/80 rounded-lg p-3 space-y-2.5">
+                    <div class="flex justify-between items-center border-b border-slate-800 pb-1.5">
+                        <span class="text-xs font-semibold text-sky-400">คำนวณ Beta จากสัดส่วน VXN / VIX (30-Day)</span>
+                        <span class="text-[10px] text-slate-500">สูตร: VXN ÷ VIX</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-[11px] text-slate-400 mb-0.5">VXN ล่าสุด (%)</label>
+                            <input type="number" id="calibVxn" step="any" value="" placeholder="เช่น 27.13" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-sky-400">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] text-slate-400 mb-0.5">VIX ล่าสุด (%) <span class="text-[10px] text-amber-400">(VIX ปกติ)</span></label>
+                            <input type="number" id="calibVix" step="any" value="" placeholder="เช่น 18.34" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-sky-400">
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-center pt-1">
+                        <span id="calibPreview" class="text-xs font-mono text-emerald-400">ผลลัพธ์: Beta = -</span>
+                        <button type="button" onclick="applyCalibration()" class="bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold px-3 py-1 rounded transition active:scale-95 shadow">
+                            นำค่านี้ไปใช้
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ข้อความแจ้งเตือนกรณีข้อมูลไม่ถูกต้อง -->
+            <div id="errorAlert" class="hidden text-xs text-rose-400 bg-rose-950/40 border border-rose-800/60 p-2.5 rounded-lg text-center font-medium">
+                กรุณาระบุราคาเปิดและค่าความผันผวนให้ถูกต้อง (ต้องเป็นตัวเลขที่มากกว่า 0)
+            </div>
+
+            <div class="pt-1 flex gap-2">
+                <button onclick="calculateMove()" class="flex-1 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm py-2.5 rounded-lg transition shadow-md shadow-sky-500/20 active:scale-[0.99]">
+                    คำนวณกรอบราคา (Calculate)
+                </button>
+                <button onclick="resetInputs()" title="ล้างค่าทั้งหมด" class="px-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-medium rounded-lg transition active:scale-[0.98]">
+                    ล้างค่า
+                </button>
+            </div>
+        </div>
+
+        <!-- Result Section -->
+        <div id="resultSection" class="space-y-6 border-t border-slate-800 pt-6">
+            <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                <div>
+                    <span class="text-slate-400 block uppercase tracking-wider text-[11px]">ราคาเปิด (Open)</span>
+                    <span id="displayOpenPrice" class="text-sky-400 font-bold text-base sm:text-lg">-</span>
+                </div>
+                <div>
+                    <span id="displayVolTitle" class="text-slate-400 block uppercase tracking-wider text-[11px]">ดัชนีอ้างอิง</span>
+                    <span id="displayVolValue" class="text-amber-400 font-bold text-base sm:text-lg">-</span>
+                </div>
+                <div>
+                    <span class="text-slate-400 block uppercase tracking-wider text-[11px]">Daily SD (±1.0σ)</span>
+                    <span id="displayDailyPct" class="text-emerald-400 font-bold text-base sm:text-lg">-</span>
+                </div>
+            </div>
+
+            <!-- 3 หลอด Progress Bar แยกตาม SD -->
+            <div class="space-y-4">
+                <!-- หลอดที่ 1: ±1.0 SD -->
+                <div class="bg-slate-800/40 border border-slate-800 rounded-xl p-3 space-y-1.5">
+                    <div class="flex justify-between text-xs font-semibold">
+                        <span id="label1SdLower" class="text-rose-400 font-mono">-1.0 SD (-)</span>
+                        <span class="text-slate-300">กรอบความน่าจะเป็น ±1.0 SD (68.27%)</span>
+                        <span id="label1SdUpper" class="text-emerald-400 font-mono">+1.0 SD (-)</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-2.5 rounded-full relative border border-slate-700/50 flex items-center">
+                        <div class="w-full bg-gradient-to-r from-rose-500 via-sky-400 to-emerald-500 h-full rounded-full opacity-80"></div>
+                        <div id="dot1sd" class="absolute top-1/2 w-3.5 h-3.5 bg-white border-2 border-slate-900 rounded-full shadow-md -translate-x-1/2 -translate-y-1/2 transition-all duration-300 pointer-events-none" style="left: 50%;"></div>
+                    </div>
+                    <div class="flex justify-between text-[10px] text-slate-400">
+                        <span id="pos1sd">ตำแหน่ง: รอระบุข้อมูล</span>
+                        <span id="status1sd" class="text-sky-400 font-medium">Normal Range</span>
+                    </div>
+                </div>
+
+                <!-- หลอดที่ 2: ±1.5 SD -->
+                <div class="bg-slate-800/40 border border-slate-800 rounded-xl p-3 space-y-1.5">
+                    <div class="flex justify-between text-xs font-semibold">
+                        <span id="label15SdLower" class="text-rose-400 font-mono">-1.5 SD (-)</span>
+                        <span class="text-slate-300">กรอบความน่าจะเป็น ±1.5 SD (86.64%)</span>
+                        <span id="label15SdUpper" class="text-emerald-400 font-mono">+1.5 SD (-)</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-2.5 rounded-full relative border border-slate-700/50 flex items-center">
+                        <div class="w-full bg-gradient-to-r from-rose-600 via-sky-500 to-emerald-600 h-full rounded-full opacity-80"></div>
+                        <div id="dot15sd" class="absolute top-1/2 w-3.5 h-3.5 bg-white border-2 border-slate-900 rounded-full shadow-md -translate-x-1/2 -translate-y-1/2 transition-all duration-300 pointer-events-none" style="left: 50%;"></div>
+                    </div>
+                    <div class="flex justify-between text-[10px] text-slate-400">
+                        <span id="pos15sd">ตำแหน่ง: รอระบุข้อมูล</span>
+                        <span id="status15sd" class="text-sky-400 font-medium">Wide Range</span>
+                    </div>
+                </div>
+
+                <!-- หลอดที่ 3: ±2.0 SD -->
+                <div class="bg-slate-800/40 border border-slate-800 rounded-xl p-3 space-y-1.5">
+                    <div class="flex justify-between text-xs font-semibold">
+                        <span id="label2SdLower" class="text-rose-500 font-mono">-2.0 SD (-)</span>
+                        <span class="text-slate-300">กรอบความน่าจะเป็น ±2.0 SD (95.45%)</span>
+                        <span id="label2SdUpper" class="text-emerald-500 font-mono">+2.0 SD (-)</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-2.5 rounded-full relative border border-slate-700/50 flex items-center">
+                        <div class="w-full bg-gradient-to-r from-rose-700 via-sky-500 to-emerald-700 h-full rounded-full opacity-80"></div>
+                        <div id="dot2sd" class="absolute top-1/2 w-3.5 h-3.5 bg-white border-2 border-slate-900 rounded-full shadow-md -translate-x-1/2 -translate-y-1/2 transition-all duration-300 pointer-events-none" style="left: 50%;"></div>
+                    </div>
+                    <div class="flex justify-between text-[10px] text-slate-400">
+                        <span id="pos2sd">ตำแหน่ง: รอระบุข้อมูล</span>
+                        <span id="status2sd" class="text-amber-400 font-medium">Extreme Range</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SD Table -->
+            <div class="overflow-x-auto rounded-xl border border-slate-800 print-box">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-800/80 text-slate-300 text-xs uppercase tracking-wider">
+                            <th class="p-3 text-center">ระดับ (SD)</th>
+                            <th class="p-3 text-right">แนวรับ (Lower)</th>
+                            <th class="p-3 text-center">ระยะแกว่ง (จุด / %)</th>
+                            <th class="p-3 text-center">ความน่าจะเป็น</th>
+                            <th class="p-3 text-left">แนวต้าน (Upper)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sdTableBody" class="divide-y divide-slate-800/60 text-sm">
+                        <tr>
+                            <td colspan="5" class="p-4 text-center text-slate-500 text-xs">กรุณากรอกราคา NQ และค่าความผันผวนเพื่อเริ่มคำนวณ</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- กล่อง Trader's Pro-Tips -->
+            <div class="bg-gradient-to-br from-slate-900 to-slate-800/70 border border-sky-500/20 rounded-xl p-3.5 text-xs text-slate-300 space-y-2">
+                <div class="flex items-center gap-2 font-bold text-sky-400 border-b border-slate-700/50 pb-1.5">
+                    <span>🎯 Trader's Pro-Tips:</span>
+                </div>
+                <ul class="space-y-1.5 text-slate-300 leading-relaxed list-disc list-inside">
+                    <li><strong class="text-white">ใช้ราคาตลาดเปิด (RTH Open):</strong> ให้อิงจากราคาตอนเปิดตลาดอเมริกา (เวลา 20.30 น. หรือ 21.30 น. ตามเวลาไทย) เพื่อความแม่นยำที่สุด</li>
+                    <li><strong class="text-white">Mean Reversion vs Trend Day:</strong> หากราคาทดสอบแนว <strong>±1.0 SD ถึง ±1.5 SD</strong> แล้วไม่ผ่าน มักจะกลับตัวเข้าหาเส้นกลาง แต่ถ้าทะลุ <strong>±2.0 SD</strong> ด้วยแท่งเทียนแรงๆ คือตลาดเป็นเทรนด์จัด (Extreme Trend Day) ให้เทรดตามน้ำไปเลย</li>
+                </ul>
+            </div>
+
+            <!-- ปุ่มบันทึก PDF -->
+            <div class="no-print pt-2">
+                <button onclick="window.print()" class="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-medium py-2.5 rounded-xl transition flex items-center justify-center gap-2 active:scale-[0.99]">
+                    📄 บันทึกหน้านี้เป็น PDF (Save as PDF)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentMode = 'vxn';
+        
+        const savedValues = {
+            vxn: '',
+            vix1d: ''
+        };
+
+        function switchMode(mode) {
+            const currentVal = document.getElementById('volValue').value.trim();
+            savedValues[currentMode] = currentVal;
+
+            currentMode = mode;
+            const btnVxn = document.getElementById('btnModeVxn');
+            const btnVix1d = document.getElementById('btnModeVix1d');
+            const volLabel = document.getElementById('volInputLabel');
+            const volInput = document.getElementById('volValue');
+            const betaContainer = document.getElementById('betaContainer');
+
+            if (mode === 'vxn') {
+                btnVxn.className = "py-2 text-xs font-bold rounded-lg transition bg-sky-500 text-slate-950 shadow-md";
+                btnVix1d.className = "py-2 text-xs font-bold rounded-lg transition text-slate-400 hover:text-white";
+                volLabel.innerText = "ค่าดัชนี VXN (%)";
+                volInput.placeholder = "เช่น 27.13";
+                volInput.value = savedValues.vxn;
+                betaContainer.classList.add('hidden');
+            } else {
+                btnVix1d.className = "py-2 text-xs font-bold rounded-lg transition bg-amber-500 text-slate-950 shadow-md";
+                btnVxn.className = "py-2 text-xs font-bold rounded-lg transition text-slate-400 hover:text-white";
+                volLabel.innerText = "ค่าดัชนี VIX1D (%)";
+                volInput.placeholder = "เช่น 23.27";
+                volInput.value = savedValues.vix1d;
+                betaContainer.classList.remove('hidden');
+            }
+            calculateMove();
+        }
+
+        function toggleCalibrateBox() {
+            const box = document.getElementById('calibrateBox');
+            box.classList.toggle('hidden');
+            updateCalibPreview();
+        }
+
+        function updateCalibPreview() {
+            const vxn = parseFloat(document.getElementById('calibVxn').value);
+            const vix = parseFloat(document.getElementById('calibVix').value);
+            const previewEl = document.getElementById('calibPreview');
+
+            if (!isNaN(vxn) && !isNaN(vix) && vix > 0 && vxn > 0) {
+                const ratio = (vxn / vix).toFixed(2);
+                previewEl.innerText = `ผลลัพธ์: Beta = ${ratio}`;
+            } else {
+                previewEl.innerText = `ผลลัพธ์: Beta = -`;
+            }
+        }
+
+        function applyCalibration() {
+            const vxn = parseFloat(document.getElementById('calibVxn').value);
+            const vix = parseFloat(document.getElementById('calibVix').value);
+
+            if (!isNaN(vxn) && !isNaN(vix) && vix > 0 && vxn > 0) {
+                const ratio = Math.max(0.01, (vxn / vix)); // ป้องกัน Beta = 0
+                document.getElementById('betaMultiplier').value = ratio.toFixed(2);
+                document.getElementById('calibrateBox').classList.add('hidden');
+                calculateMove();
+            }
+        }
+
+        function resetInputs() {
+            document.getElementById('openPrice').value = '';
+            document.getElementById('currentPrice').value = '';
+            document.getElementById('volValue').value = '';
+            savedValues.vxn = '';
+            savedValues.vix1d = '';
+            clearResults();
+        }
+
+        function clearResults() {
+            document.getElementById('errorAlert').classList.add('hidden');
+            document.getElementById('displayOpenPrice').innerText = '-';
+            document.getElementById('displayVolValue').innerText = '-';
+            document.getElementById('displayDailyPct').innerText = '-';
+
+            [
+                { mult: 1.0, dotId: 'dot1sd', lowId: 'label1SdLower', uppId: 'label1SdUpper', posId: 'pos1sd' },
+                { mult: 1.5, dotId: 'dot15sd', lowId: 'label15SdLower', uppId: 'label15SdUpper', posId: 'pos15sd' },
+                { mult: 2.0, dotId: 'dot2sd', lowId: 'label2SdLower', uppId: 'label2SdUpper', posId: 'pos2sd' }
+            ].forEach(b => {
+                document.getElementById(b.dotId).style.left = '50%';
+                document.getElementById(b.lowId).innerText = `-${b.mult.toFixed(1)} SD (-)`;
+                document.getElementById(b.uppId).innerText = `+${b.mult.toFixed(1)} SD (-)`;
+                document.getElementById(b.posId).innerText = 'ตำแหน่ง: รอระบุข้อมูล';
+            });
+
+            document.getElementById('sdTableBody').innerHTML = `
+                <tr>
+                    <td colspan="5" class="p-4 text-center text-slate-500 text-xs">กรุณากรอกราคา NQ และค่าความผันผวนเพื่อเริ่มคำนวณ</td>
+                </tr>
+            `;
+        }
+
+        function calculateMove() {
+            const openInput = document.getElementById('openPrice');
+            const currentInput = document.getElementById('currentPrice');
+            const volInput = document.getElementById('volValue');
+            const betaInput = document.getElementById('betaMultiplier');
+            const errorAlert = document.getElementById('errorAlert');
+
+            const openPrice = parseFloat(openInput.value);
+            // ดักจับ: หากยังไม่ได้กรอก Spot ให้ดึง Open มาใช้แทนชั่วคราว
+            const currentPriceText = currentInput.value.trim();
+            const currentPrice = currentPriceText === '' ? openPrice : parseFloat(currentPriceText);
+            
+            const rawVol = parseFloat(volInput.value);
+            let beta = parseFloat(betaInput.value);
+            
+            // ดักจับ: ป้องกันตัวเลขติดลบและเป็นศูนย์
+            if (isNaN(beta) || beta <= 0) beta = 1.0;
+
+            savedValues[currentMode] = volInput.value.trim();
+
+            if (openInput.value.trim() === '' || volInput.value.trim() === '') {
+                clearResults();
+                return;
+            }
+
+            if (isNaN(openPrice) || isNaN(rawVol) || openPrice <= 0 || rawVol <= 0) {
+                errorAlert.classList.remove('hidden');
+                clearResults(); // ล้างผลลัพธ์ถ้ากรอกค่าติดลบ
+                return;
+            } else {
+                errorAlert.classList.add('hidden');
+            }
+
+            let effectiveAnnualVol = rawVol;
+            if (currentMode === 'vix1d') {
+                effectiveAnnualVol = rawVol * beta;
+            }
+            const dailyVolPct1SD = (effectiveAnnualVol / 100) / Math.sqrt(252);
+
+            document.getElementById('displayOpenPrice').innerText = openPrice.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('displayVolTitle').innerText = currentMode === 'vxn' ? 'ค่าดัชนี VXN' : 'VIX1D (Adj. Beta)';
+            document.getElementById('displayVolValue').innerText = currentMode === 'vxn' 
+                ? `${rawVol.toFixed(2)}%` 
+                : `${rawVol.toFixed(2)}% (Eff: ${effectiveAnnualVol.toFixed(1)}%)`;
+            document.getElementById('displayDailyPct').innerText = `±${(dailyVolPct1SD * 100).toFixed(2)}%`;
+
+            const levels = [
+                { sd: "± 1.0 SD", mult: 1.0, prob: "68.27%", bg: "bg-sky-950/20" },
+                { sd: "± 1.5 SD", mult: 1.5, prob: "86.64%", bg: "bg-slate-800/40" },
+                { sd: "± 2.0 SD", mult: 2.0, prob: "95.45%", bg: "bg-indigo-950/20" }
+            ];
+
+            let tableHtml = "";
+            let bounds = {};
+
+            levels.forEach(lvl => {
+                const movePct = dailyVolPct1SD * lvl.mult;
+                const moveAmount = openPrice * movePct;
+                const lower = openPrice - moveAmount;
+                const upper = openPrice + moveAmount;
+
+                bounds[lvl.mult] = { lower, upper };
+
+                tableHtml += `
+                    <tr class="${lvl.bg} hover:bg-slate-800/60 transition">
+                        <td class="p-3 text-center font-bold text-sky-400">${lvl.sd}</td>
+                        <td class="p-3 text-right text-rose-300 font-medium font-mono">${lower.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td class="p-3 text-center text-slate-300 font-mono text-xs">±${moveAmount.toFixed(1)} (±${(movePct * 100).toFixed(2)}%)</td>
+                        <td class="p-3 text-center text-slate-400 text-xs">${lvl.prob}</td>
+                        <td class="p-3 text-left text-emerald-300 font-medium font-mono">${upper.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    </tr>
+                `;
+            });
+
+            document.getElementById('sdTableBody').innerHTML = tableHtml;
+
+            function updateBar(mult, dotId, lowLblId, uppLblId, posLblId) {
+                const low = bounds[mult].lower;
+                const upp = bounds[mult].upper;
+
+                // คำนวณเปอร์เซ็นต์แบบ Real-time
+                let percent = ((currentPrice - low) / (upp - low)) * 100;
+                
+                // ดักจับการล้นขอบหลอด ไม่ให้หลุดเฟรม 0% - 100%
+                let clampedPercent = Math.max(0, Math.min(100, percent));
+
+                document.getElementById(dotId).style.left = `${clampedPercent.toFixed(1)}%`;
+                document.getElementById(lowLblId).innerText = `-${mult.toFixed(1)} SD (${low.toLocaleString('en-US', {maximumFractionDigits: 1})})`;
+                document.getElementById(uppLblId).innerText = `+${mult.toFixed(1)} SD (${upp.toLocaleString('en-US', {maximumFractionDigits: 1})})`;
+                
+                if (currentPriceText === '') {
+                    // หากไม่ได้กรอกราคาปัจจุบัน
+                    document.getElementById(posLblId).innerText = `ตำแหน่ง: 50.0% (ราคาเปิด)`;
+                } else {
+                    document.getElementById(posLblId).innerText = `ตำแหน่ง: ${percent.toFixed(1)}% (NQ: ${currentPrice.toLocaleString('en-US', {minimumFractionDigits: 1})})`;
+                }
+            }
+
+            updateBar(1.0, 'dot1sd', 'label1SdLower', 'label1SdUpper', 'pos1sd');
+            updateBar(1.5, 'dot15sd', 'label15SdLower', 'label15SdUpper', 'pos15sd');
+            updateBar(2.0, 'dot2sd', 'label2SdLower', 'label2SdUpper', 'pos2sd');
+        }
+
+        ['openPrice', 'currentPrice', 'volValue', 'betaMultiplier'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') calculateMove();
+                });
+                el.addEventListener('input', calculateMove);
+            }
+        });
+
+        ['calibVxn', 'calibVix'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('input', updateCalibPreview);
+                el.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') applyCalibration();
+                });
+            }
+        });
+
+        window.onload = function() {
+            clearResults();
+        };
+    </script>
+</body>
+</html>
